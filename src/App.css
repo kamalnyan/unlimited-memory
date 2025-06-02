@@ -1,0 +1,103 @@
+/**
+ * App.css
+ * Additional styles for layout, logo animation, and card elements.
+ * Used for basic structure and branding visuals.
+ * Contains responsive design utilities and animations.
+ */
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+/* AI message styling */
+.ai-plain-text {
+  background-color: rgba(var(--primary-rgb), 0.1);
+  border: 1px solid rgba(var(--primary-rgb), 0.2);
+}
+
+.typing-animation {
+  display: inline-block;
+  position: relative;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.typing-animation .cursor {
+  display: inline-block;
+  width: 0.5em;
+  height: 1.2em;
+  margin-left: 2px;
+  background-color: currentColor;
+  animation: blink 1s step-end infinite;
+  opacity: 0.7;
+  vertical-align: text-bottom;
+}
+
+@keyframes blink {
+  from, to {
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Adjust the bounce animation for the typing indicator */
+@keyframes custom-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.typing-indicator-dot {
+  animation: custom-bounce 1.4s infinite;
+}
+
+.typing-indicator-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.typing-indicator-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}

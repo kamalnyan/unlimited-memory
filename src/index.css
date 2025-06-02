@@ -1,0 +1,380 @@
+/**
+ * index.css
+ * Global styles for the app, including Tailwind base, custom CSS variables, and theme overrides.
+ * Defines color schemes, font, and utility classes for both light and dark modes.
+ * Contains custom styling for chat bubbles, scrollbars, and UI components.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 210 20% 98%;
+    --sidebar-foreground: 215 25% 27%;
+    --sidebar-primary: 221.2 83.2% 53.3%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 40% 96.1%;
+    --sidebar-accent-foreground: 222.2 47.4% 11.2%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-ring: 221.2 83.2% 53.3%;
+
+    --code-background: 0 0% 16%; /* #292929 */
+    --code-foreground: 0 0% 100%; /* #ffffff */
+
+    --user-bubble-bg: 0 0% 13%; /* #222222 */
+    --user-bubble-text: 0 0% 100%; /* #ffffff */
+
+    --scrollbar-thumb: 0 0% 35%; /* #5a5a5a */
+    --scrollbar-track: 0 0% 13%; /* #222222 */
+  }
+
+  .dark {
+    --background: 0 0% 11%; /* #1c1c1c */
+    --foreground: 0 0% 100%; /* #ffffff */
+
+    --card: 0 0% 10%; /* #181818 */
+    --card-foreground: 0 0% 100%; /* #ffffff */
+
+    --popover: 0 0% 13%; /* #222222 */
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 0 0% 100%; /* #ffffff */
+    --primary-foreground: 0 0% 0%; /* #000000 */
+
+    --secondary: 0 0% 80%; /* #cccccc */
+    --secondary-foreground: 0 0% 0%; /* #000000 */
+
+    --muted: 0 0% 16%; /* #292929 */
+    --muted-foreground: 0 0% 80%; /* #cccccc */
+
+    --accent: 0 0% 20%; /* #333333 */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 0% 40%; /* #666666 */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 20%; /* #333333 */
+    --input: 0 0% 13%; /* #222222 */
+    --ring: 0 0% 40%; /* #666666 */
+    
+    --sidebar-background: 0 0% 9%; /* #161616 */
+    --sidebar-foreground: 0 0% 100%; /* #ffffff */
+    --sidebar-primary: 0 0% 100%; /* #ffffff */
+    --sidebar-primary-foreground: 0 0% 0%; /* #000000 */
+    --sidebar-accent: 0 0% 20%; /* #333333 */
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 0 0% 20%; /* #333333 */
+    --sidebar-ring: 0 0% 40%; /* #666666 */
+
+    --code-background: 0 0% 16%; /* #292929 */
+    --code-foreground: 0 0% 100%; /* #ffffff */
+
+    --user-bubble-bg: 0 0% 27%; /* #444444, even lighter */
+    --user-bubble-text: 0 0% 100%; /* #ffffff, pure white */
+
+    --scrollbar-thumb: 0 0% 35%; /* #5a5a5a */
+    --scrollbar-track: 0 0% 13%; /* #222222 */
+
+    /* Dark mode specific styles for the send button */
+    .send-btn-black {
+      background: hsl(var(--foreground)) !important; /* Use foreground color (white in dark mode) for background */
+      color: hsl(var(--background)) !important; /* Use background color (dark in dark mode) for icon color */
+    }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  .user-bubble {
+    background-color: hsl(var(--user-bubble-bg));
+    color: hsl(var(--user-bubble-text));
+  }
+
+  .ai-plain-text {
+    background: none !important;
+    border: none !important;
+    color: hsl(var(--foreground));
+    box-shadow: none !important;
+  }
+
+  .dark .chatgpt-input-bg {
+    background-color: #222 !important;
+    border: 1.5px solid #333 !important;
+    box-shadow: 0 2px 16px 0 rgba(0,0,0,0.10), 0 1.5px 4px 0 rgba(0,0,0,0.10);
+  }
+  :not(.dark) .chatgpt-input-bg {
+    background-color: #fff !important;
+    border: 1.5px solid #d1d5db !important;
+    box-shadow: 0 2px 16px 0 rgba(0,0,0,0.10), 0 1.5px 4px 0 rgba(0,0,0,0.10);
+  }
+
+  .send-btn-black:hover {
+    background: #222 !important;
+  }
+
+  /* Custom dark mode for react-date-range preset panel */
+  html.dark .rdrDefinedRangesWrapper,
+  body.dark .rdrDefinedRangesWrapper,
+  html.dark .rdrStaticRangeLabel,
+  body.dark .rdrStaticRangeLabel,
+  html.dark .rdrInputRangeInput,
+  body.dark .rdrInputRangeInput,
+  html.dark .rdrInputRange,
+  body.dark .rdrInputRange,
+  html.dark .rdrStaticRange,
+  body.dark .rdrStaticRange {
+    background: #18181b !important;
+    color: #e5e7eb !important;
+    border-color: #333 !important;
+  }
+
+  html.dark .rdrStaticRangeLabel,
+  body.dark .rdrStaticRangeLabel,
+  html.dark .rdrInputRangeInput,
+  body.dark .rdrInputRangeInput {
+    color: #e5e7eb !important;
+  }
+
+  html.dark .rdrInputRangeInput,
+  body.dark .rdrInputRangeInput {
+    background: #222 !important;
+    border: 1px solid #333 !important;
+  }
+
+  html.dark .rdrStaticRange:hover,
+  body.dark .rdrStaticRange:hover,
+  html.dark .rdrStaticRange:focus,
+  body.dark .rdrStaticRange:focus {
+    background: #23232a !important;
+  }
+
+  /* Custom dark mode for react-date-range calendar and date input area */
+  html.dark .rdrCalendarWrapper,
+  body.dark .rdrCalendarWrapper,
+  html.dark .rdrDateDisplay,
+  body.dark .rdrDateDisplay,
+  html.dark .rdrDateDisplayItem,
+  body.dark .rdrDateDisplayItem,
+  html.dark .rdrDateDisplayItem input,
+  body.dark .rdrDateDisplayItem input,
+  html.dark .rdrMonthAndYearWrapper,
+  body.dark .rdrMonthAndYearWrapper,
+  html.dark .rdrMonths,
+  body.dark .rdrMonths,
+  html.dark .rdrMonth,
+  body.dark .rdrMonth,
+  html.dark .rdrWeekDays,
+  body.dark .rdrWeekDays,
+  html.dark .rdrDays,
+  body.dark .rdrDays,
+  html.dark .rdrDay,
+  body.dark .rdrDay,
+  html.dark .rdrDayNumber,
+  body.dark .rdrDayNumber,
+  html.dark .rdrMonthPicker,
+  body.dark .rdrMonthPicker,
+  html.dark .rdrYearPicker,
+  body.dark .rdrYearPicker {
+    background: #18181b !important;
+    color: #e5e7eb !important;
+    border-color: #333 !important;
+  }
+
+  html.dark .rdrDateDisplayItem input,
+  body.dark .rdrDateDisplayItem input {
+    background: #23232a !important;
+    color: #e5e7eb !important;
+    border: 1px solid #333 !important;
+  }
+
+  html.dark .rdrDayNumber span,
+  body.dark .rdrDayNumber span {
+    color: #e5e7eb !important;
+  }
+
+  html.dark .rdrDayToday .rdrDayNumber span,
+  body.dark .rdrDayToday .rdrDayNumber span {
+    border: 1.5px solid #6366f1 !important;
+  }
+
+  html.dark .rdrDayPassive .rdrDayNumber span,
+  body.dark .rdrDayPassive .rdrDayNumber span {
+    color: #444 !important;
+  }
+
+  html.dark .rdrDayDisabled,
+  body.dark .rdrDayDisabled,
+  html.dark .rdrDayDisabled .rdrDayNumber span,
+  body.dark .rdrDayDisabled .rdrDayNumber span {
+    color: #333 !important;
+    background: #23232a !important;
+  }
+
+  html.dark .rdrMonthAndYearPickers select,
+  body.dark .rdrMonthAndYearPickers select {
+    background: #23232a !important;
+    color: #e5e7eb !important;
+    border: 1px solid #333 !important;
+  }
+
+  /* Custom dark mode for DateRangePicker with direct .dark and [data-theme="dark"] selectors */
+  .dark .rdrCalendarWrapper,
+  [data-theme="dark"] .rdrCalendarWrapper,
+  .dark .rdrDateDisplay,
+  [data-theme="dark"] .rdrDateDisplay,
+  .dark .rdrMonthAndYearWrapper,
+  [data-theme="dark"] .rdrMonthAndYearWrapper {
+    background: #18181b !important;
+    color: #e5e7eb !important;
+  }
+
+  .dark .rdrDateInput,
+  [data-theme="dark"] .rdrDateInput,
+  .dark .rdrDateDisplayItem,
+  [data-theme="dark"] .rdrDateDisplayItem {
+    background-color: #23232a !important;
+    input {
+      color: #e5e7eb !important;
+      background-color: #23232a !important;
+    }
+  }
+
+  /* Direct targeting of specific date picker components without relying on body/html class */
+  .dark .rdrMonth,
+  [data-theme="dark"] .rdrMonth {
+    background: #18181b !important;
+  }
+
+  .dark .rdrDay,
+  [data-theme="dark"] .rdrDay {
+    background: #18181b !important;
+    color: #e5e7eb !important;
+  }
+
+  .dark .rdrDayNumber span,
+  [data-theme="dark"] .rdrDayNumber span {
+    color: #e5e7eb !important;
+  }
+
+  .dark .rdrWeekDay,
+  [data-theme="dark"] .rdrWeekDay {
+    color: #bbb !important;
+  }
+
+  .dark .rdrDefinedRangesWrapper,
+  [data-theme="dark"] .rdrDefinedRangesWrapper {
+    background: #18181b !important;
+    border-color: #333 !important;
+  }
+
+  /* Fix the white input boxes at the top of date picker */
+  .dark .rdrDateDisplayWrapper,
+  html.dark .rdrDateDisplayWrapper,
+  body.dark .rdrDateDisplayWrapper,
+  [data-theme="dark"] .rdrDateDisplayWrapper {
+    background-color: #18181b !important;
+  }
+
+  .dark .rdrDateDisplayItem,
+  html.dark .rdrDateDisplayItem,
+  body.dark .rdrDateDisplayItem,
+  [data-theme="dark"] .rdrDateDisplayItem {
+    background-color: #23232a !important;
+    border-color: #333 !important;
+  }
+
+  .dark .rdrDateDisplayItem input,
+  html.dark .rdrDateDisplayItem input,
+  body.dark .rdrDateDisplayItem input,
+  [data-theme="dark"] .rdrDateDisplayItem input {
+    color: #e5e7eb !important;
+    background-color: #23232a !important;
+  }
+
+  /* Fix the selected date styling */
+  .dark .rdrDayStartPreview,
+  .dark .rdrDayEndPreview,
+  .dark .rdrDayInPreview,
+  .dark .rdrStartEdge,
+  .dark .rdrEndEdge,
+  .dark .rdrInRange,
+  html.dark .rdrDayStartPreview,
+  html.dark .rdrDayEndPreview,
+  html.dark .rdrDayInPreview,
+  html.dark .rdrStartEdge,
+  html.dark .rdrEndEdge,
+  html.dark .rdrInRange,
+  body.dark .rdrDayStartPreview,
+  body.dark .rdrDayEndPreview,
+  body.dark .rdrDayInPreview,
+  body.dark .rdrStartEdge,
+  body.dark .rdrEndEdge,
+  body.dark .rdrInRange {
+    background-color: #4f46e5 !important;
+    color: white !important;
+  }
+
+  .dark .rdrDay:not(.rdrDayPassive) .rdrInRange ~ .rdrDayNumber span,
+  .dark .rdrDay:not(.rdrDayPassive) .rdrStartEdge ~ .rdrDayNumber span,
+  .dark .rdrDay:not(.rdrDayPassive) .rdrEndEdge ~ .rdrDayNumber span,
+  .dark .rdrDay:not(.rdrDayPassive) .rdrSelected ~ .rdrDayNumber span,
+  html.dark .rdrDay:not(.rdrDayPassive) .rdrInRange ~ .rdrDayNumber span,
+  html.dark .rdrDay:not(.rdrDayPassive) .rdrStartEdge ~ .rdrDayNumber span,
+  html.dark .rdrDay:not(.rdrDayPassive) .rdrEndEdge ~ .rdrDayNumber span,
+  html.dark .rdrDay:not(.rdrDayPassive) .rdrSelected ~ .rdrDayNumber span,
+  body.dark .rdrDay:not(.rdrDayPassive) .rdrInRange ~ .rdrDayNumber span,
+  body.dark .rdrDay:not(.rdrDayPassive) .rdrStartEdge ~ .rdrDayNumber span,
+  body.dark .rdrDay:not(.rdrDayPassive) .rdrEndEdge ~ .rdrDayNumber span,
+  body.dark .rdrDay:not(.rdrDayPassive) .rdrSelected ~ .rdrDayNumber span {
+    color: white !important;
+  }
+
+  .dark .rdrDayToday .rdrDayNumber span:after,
+  html.dark .rdrDayToday .rdrDayNumber span:after,
+  body.dark .rdrDayToday .rdrDayNumber span:after {
+    background: #6366f1 !important;
+  }
+}
