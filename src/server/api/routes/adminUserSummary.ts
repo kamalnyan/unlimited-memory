@@ -9,8 +9,8 @@ const router = express.Router();
 const openai = new OpenAI();
 
 const MONGO_URI = process.env.MONGO_URI;
+
 console.log(MONGO_URI);
-//   "mongodb+srv://innovationcelleoxs19:AkMuA3cN2tsMllAx@cluster0.cywqo3w.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
 const DB_NAME = "test";
 const client = new MongoClient(MONGO_URI);
 
@@ -29,41 +29,40 @@ connectDB().catch((err) => {
   process.exit(1);
 });
 
-// Utility: Find user by username or name, with fallback suggestion
-async function findUserOrSuggest(identifier) {
+// Utility: Get all users (username, name, clerkId)
+async function getAllUsers() {
   const db = client.db(DB_NAME);
   const usersCollection = db.collection("users");
+  return usersCollection.find({}, { projection: { username: 1, name: 1, clerkId: 1 } }).toArray();
+}
 
-  // Exact match by username
-  let user = await usersCollection.findOne({
-    username: new RegExp(`^${identifier}$`, "i"),
-  });
-
-  // If not exact match, try exact name
-  if (!user) {
-    user = await usersCollection.findOne({
-      name: new RegExp(`^${identifier}$`, "i"),
-    });
+// Utility: Find user in prompt
+async function extractUserFromPrompt(prompt) {
+  const users = await getAllUsers();
+  const promptLower = prompt.toLowerCase();
+  // Try to find a user whose username or name appears in the prompt
+  for (const user of users) {
+    if (user.username && promptLower.includes(user.username.toLowerCase())) {
+      return user;
+    }
+    if (user.name && promptLower.includes(user.name.toLowerCase())) {
+      return user;
+    }
   }
-
-  if (user) return { user };
-
-  // Fallback: Partial/fuzzy search for closest match by username or name
-  const similarUser = await usersCollection.findOne({
-    $or: [
-      { username: new RegExp(identifier, "i") },
-      { name: new RegExp(identifier, "i") },
-    ],
-  });
-
-  if (similarUser) {
-    // Suggest either the name or the username, whichever is more user-friendly
-    const suggestedName = similarUser.name || similarUser.username;
-    return { suggestion: suggestedName };
+  // Try partial match (substring)
+  for (const user of users) {
+    if (user.username && user.username.length > 2 && promptLower.includes(user.username.slice(0, 3).toLowerCase())) {
+      return user;
+    }
+    if (user.name && user.name.length > 2 && promptLower.includes(user.name.slice(0, 3).toLowerCase())) {
+      return user;
+    }
   }
-
-  // Nothing found
-  return {};
+  // Suggest closest match (by Levenshtein distance or just first user for now)
+  if (users.length > 0) {
+    return { suggestion: users[0].name || users[0].username };
+  }
+  return null;
 }
 
 // Utility: Get user conversation with system messages
@@ -96,69 +95,43 @@ router.post("/user-summary", async (req, res) => {
       return res.status(400).json({ error: "Prompt (string) is required." });
     }
 
-    // Extract identifier (username or name) from prompt
-    const match = prompt.toLowerCase().match(/what\s+(.+?)\s+is\s+doing/);
-    if (!match) {
-      return res.status(400).json({
-        error:
-          "Could not extract username or name from prompt. Use format: 'what <username or name> is doing'.",
-      });
+    // Dynamically extract user from prompt
+    const userOrSuggestion = await extractUserFromPrompt(prompt);
+    if (!userOrSuggestion) {
+      return res.status(404).json({ error: "No users found in the database." });
     }
-
-    const identifier = match[1].trim();
-
-    // Search user by exact username/name, fallback to partial
-    const { user, suggestion } = await findUserOrSuggest(identifier);
-
-    if (!user && suggestion) {
-      return res.status(404).json({
-        error: `No exact match for "${identifier}". Did you mean "${suggestion}"?`,
-      });
+    if ('suggestion' in userOrSuggestion) {
+      return res.status(404).json({ error: `Could not find a user in the prompt. Did you mean \"${userOrSuggestion.suggestion}\"?` });
     }
-
-    if (!user) {
-      return res.status(404).json({
-        error: `No user found matching "${identifier}".`,
-      });
-    }
+    const user = userOrSuggestion;
 
     const senderId = user.clerkId;
     if (!senderId) {
-      return res.status(404).json({
-        error: `User "${
-          user.name || user.username || identifier
-        }" does not have a clerkId.`,
-      });
+      return res.status(404).json({ error: `User \"${user.name || user.username}\" does not have a clerkId.` });
     }
 
     // Get user's conversation
     const conversationText = await getUserConversation(senderId);
     if (!conversationText) {
-      return res.status(404).json({
-        error: `No conversation history found for user: ${
-          user.name || user.username || identifier
-        }`,
-      });
+      return res.status(404).json({ error: `No conversation history found for user: ${user.name || user.username}` });
     }
 
-    // Dynamic system prompt referencing actual user data
+    // Dynamic system prompt referencing actual user data and admin's prompt
     const messages = [
       {
-        role: "system",
-        content: `You are an admin assistant. Summarize the activities and main points of the user named "${
-          user.name || user.username || identifier
-        }" based on their chat conversation below.`,
+        role: "system" as const,
+        content: `You are an admin assistant. Use the following chat history to answer the admin's prompt.\n\nUser: ${user.name || user.username}`,
       },
       {
-        role: "user",
-        content: conversationText,
+        role: "user" as const,
+        content: `Prompt: ${prompt}\n\nChat history:\n${conversationText}`,
       },
     ];
 
     // Get summary from OpenAI
     const summaryResponse = await openai.chat.completions.create({
       model: "gpt-4o",
-      messages,
+      messages: messages as any, // Type assertion for compatibility
       temperature: 0.3,
       max_tokens: 500,
     });
