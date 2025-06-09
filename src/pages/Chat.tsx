@@ -967,6 +967,8 @@ const Chat = () => {
           onSend={handleSendMessage}
           disabled={(isLoading && !isCreatingThread) || isThreadsLoading || isGeneratingResponse}
           dark={isDark}
+          userId={user?.id || ''}
+          threads={threads}
         />
       </div>
     </div>

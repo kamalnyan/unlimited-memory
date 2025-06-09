@@ -4,7 +4,7 @@
  * Features message composition, character limits, and send button.
  * Handles message submission and error states.
  */
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Send, Mic, Loader2, Paperclip, X, ArrowUp, Image as ImageIcon, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,15 +14,18 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 
 type MessageInputProps = {
   onSend: (message: string, files?: File[], isDocumentQuery?: boolean) => Promise<void>;
   disabled?: boolean;
   dark?: boolean;
+  userId: string;
+  threads: { id: string; title: string }[];
 };
 
-export default function MessageInput({ onSend, disabled = false, dark = false }: MessageInputProps) {
+export default function MessageInput({ onSend, disabled = false, dark = false, userId, threads }: MessageInputProps) {
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const { toast } = useToast();
@@ -37,6 +40,12 @@ export default function MessageInput({ onSend, disabled = false, dark = false }:
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isDocumentQuery, setIsDocumentQuery] = useState(false);
   const documentInputRef = useRef<HTMLInputElement>(null);
+  const [importedChat, setImportedChat] = useState<any>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [isImportPreviewOpen, setIsImportPreviewOpen] = useState(false);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
+  const [mappedMessages, setMappedMessages] = useState<any[]>([]);
+  const [selectedThreadId, setSelectedThreadId] = useState<string>("");
 
   // Helper function to check if a file is a supported document type
   const isSupportedDocument = (file: File): boolean => {
@@ -395,8 +404,241 @@ export default function MessageInput({ onSend, disabled = false, dark = false }:
     documentInputRef.current?.click();
   };
 
+  // Handler for Import Chat button
+  const handleImportChatClick = () => {
+    importFileInputRef.current?.click();
+  };
+
+  // Handler for file input change
+  const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        console.log('Imported JSON structure:', {
+          isArray: Array.isArray(json),
+          keys: Object.keys(json),
+          hasMapping: 'mapping' in json,
+          type: typeof json
+        });
+
+        // If full export (array), pick the first or show list
+        const isArrayExport = Array.isArray(json);
+        const selected = isArrayExport ? json[0] : json;
+
+        console.log('Selected conversation:', {
+          keys: Object.keys(selected),
+          hasMapping: 'mapping' in selected,
+          type: typeof selected
+        });
+
+        // Check for both mapping and conversations property (newer ChatGPT exports)
+        if (!selected.mapping && !selected.conversations) {
+          setImportError('Invalid ChatGPT export: missing mapping or conversations property.');
+          setImportedChat(null);
+          return;
+        }
+
+        // Handle both old and new ChatGPT export formats
+        const chatData = selected.mapping || selected.conversations;
+        if (typeof chatData !== 'object') {
+          setImportError('Invalid ChatGPT export: mapping/conversations is not an object.');
+          setImportedChat(null);
+          return;
+        }
+
+        setImportedChat(selected);
+        setImportError(null);
+        setIsImportPreviewOpen(true);
+      } catch (err) {
+        console.error('Error parsing JSON:', err);
+        setImportError('Invalid JSON file.');
+        setImportedChat(null);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Map imported ChatGPT messages to app format
+  const mapImportedMessages = (imported: any, threadId: string) => {
+    if (!imported) return [];
+    
+    // Get the chat data from either mapping or conversations
+    const chatData = imported.mapping || imported.conversations;
+    if (!chatData || typeof chatData !== 'object') return [];
+
+    // Handle both array and object formats
+    const messages = Array.isArray(chatData) ? chatData : Object.values(chatData);
+
+    return messages
+      .filter((msg: any) => {
+        // Handle both old and new message formats
+        const content = msg.message?.content?.parts?.[0] || msg.content;
+        return content && typeof content === 'string';
+      })
+      .map((msg: any) => {
+        // Handle both old and new message formats
+        const role = msg.message?.author?.role || msg.role;
+        const content = msg.message?.content?.parts?.[0] || msg.content;
+        const timestamp = msg.message?.create_time || msg.create_time || Date.now() / 1000;
+
+        // Ensure content is properly formatted
+        let formattedContent = content;
+        if (typeof content === 'string') {
+          // Remove any markdown code block markers if they're not properly formatted
+          formattedContent = content.replace(/```\s*\n/g, '```\n').replace(/\n\s*```/g, '\n```');
+        }
+
+        return {
+          threadId,
+          sender: role === "user" ? userId : "system",
+          content: formattedContent,
+          createdAt: new Date(timestamp * 1000),
+          updatedAt: new Date(timestamp * 1000),
+          role: role === "user" ? "user" : "ai" // Add role field for proper display
+        };
+      });
+  };
+
+  // Handler for continuing import after preview
+  const handleContinueImport = async () => {
+    if (!selectedThreadId) {
+      setImportError("Please select a thread to import into.");
+      return;
+    }
+    const mapped = mapImportedMessages(importedChat, selectedThreadId);
+    setMappedMessages(mapped);
+    setIsImportPreviewOpen(false);
+
+    try {
+      // Send all messages in a batch to the backend
+      const response = await fetch('/api/messages/batch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          threadId: selectedThreadId,
+          messages: mapped,
+          userId: userId
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.text();
+        throw new Error(`Failed to import messages: ${response.status} - ${errorData}`);
+      }
+
+      const result = await response.json();
+      console.log('Import result:', result);
+
+      // Get the first user message to use as thread title
+      const firstUserMessage = mapped.find(msg => msg.sender === userId);
+      if (firstUserMessage) {
+        // Update thread title with first user message (truncated)
+        const title = firstUserMessage.content.slice(0, 50) + (firstUserMessage.content.length > 50 ? '...' : '');
+        await fetch(`/api/threads/${selectedThreadId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            userId: userId,
+            title: title
+          })
+        });
+      }
+
+      // Show success message
+      toast({
+        title: "Import Successful",
+        description: `Successfully imported ${mapped.length} messages`,
+        variant: "default"
+      });
+
+      // Clear the import state
+      setImportedChat(null);
+      setMappedMessages([]);
+      setSelectedThreadId("");
+      
+      // Trigger a refresh of the messages in the parent component
+      if (onSend) {
+        await onSend("", [], false);
+      }
+    } catch (error) {
+      console.error("Error importing messages:", error);
+      toast({
+        title: "Import Failed",
+        description: error instanceof Error ? error.message : "Failed to import messages",
+        variant: "destructive"
+      });
+    }
+  };
+
   return (
     <div className={`flex flex-col gap-2 p-4 ${dark ? 'bg-gray-800' : 'bg-white'} border-t`}>
+      {/* Import Chat Button and File Input */}
+      <div className="flex items-center gap-2 mb-2">
+        <Button type="button" variant="outline" onClick={handleImportChatClick} disabled={disabled}>
+          Import Chat
+        </Button>
+        <input
+          type="file"
+          accept=".json"
+          ref={importFileInputRef}
+          style={{ display: 'none' }}
+          onChange={handleImportFileChange}
+        />
+        {importError && <span className="text-red-500 text-xs ml-2">{importError}</span>}
+      </div>
+      {/* Preview Dialog for Imported Chat */}
+      <Dialog open={isImportPreviewOpen} onOpenChange={setIsImportPreviewOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Preview Imported Chat</DialogTitle>
+            <DialogDescription>
+              Review the imported messages before continuing. You can select a thread to import these messages into.
+            </DialogDescription>
+          </DialogHeader>
+          {importedChat ? (
+            <div className="max-h-64 overflow-y-auto text-sm">
+              {Object.values(importedChat.mapping).slice(0, 5).map((msg: any, idx: number) => (
+                <div key={msg.id || idx} className="mb-2 p-2 border-b last:border-b-0">
+                  <div className="font-semibold">{msg.message?.author?.role || 'unknown'}</div>
+                  <div>{msg.message?.content?.parts?.[0] || '[No content]'}</div>
+                  <div className="text-xs text-gray-400">{msg.message?.create_time ? new Date(msg.message.create_time * 1000).toLocaleString() : ''}</div>
+                </div>
+              ))}
+              {Object.values(importedChat.mapping).length > 5 && <div className="text-xs text-gray-400">...and more</div>}
+            </div>
+          ) : (
+            <div>No valid chat data found.</div>
+          )}
+          {/* Thread selection dropdown (replace with real threads) */}
+          <div className="mt-4">
+            <label className="block text-xs mb-1">Select Thread to Import Into</label>
+            <select
+              className="w-full border rounded p-2 text-sm"
+              value={selectedThreadId}
+              onChange={e => setSelectedThreadId(e.target.value)}
+            >
+              <option value="">-- Select Thread --</option>
+              {threads.map(thread => (
+                <option key={thread.id} value={thread.id}>{thread.title}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex justify-end mt-4 gap-2">
+            <Button type="button" variant="secondary" onClick={() => setIsImportPreviewOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" variant="default" onClick={handleContinueImport}>
+              Continue Import
+            </Button>
+          </div>
+          {importError && <div className="text-red-500 text-xs mt-2">{importError}</div>}
+        </DialogContent>
+      </Dialog>
       {/* Selected files and images preview */}
       {(selectedFiles.length > 0 || selectedImages.length > 0) && (
         <div className="flex flex-wrap gap-2 p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
