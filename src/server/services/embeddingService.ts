@@ -23,17 +23,17 @@ export interface RAGResponse {
 }
 
 export class EmbeddingService {
-  private apiUrl: string;
+  private apiUrl: string | undefined;
   private enabled: boolean;
 
   constructor(apiUrl?: string) {
-    this.apiUrl = apiUrl || process.env.EMBEDDING_API_URL || 'https://f004-2404-7c80-5c-24b6-a48c-55fc-fe65-3417.ngrok-free.app';
+    this.apiUrl = apiUrl || process.env.EMBEDDING_API_URL;
     this.enabled = !!this.apiUrl;
     
     if (this.enabled) {
       console.log(`Embedding Service initialized with API URL: ${this.apiUrl}`);
     } else {
-      console.warn('Embedding Service disabled: No API URL provided');
+      console.warn('Embedding Service disabled: No API URL provided in environment variables or constructor');
     }
   }
 
@@ -59,8 +59,8 @@ export class EmbeddingService {
     messageId?: string
   ): Promise<EmbeddingResponse> {
     if (!this.enabled) {
-      console.warn('Embedding Service is disabled');
-      return { status: 'error', error: 'Embedding Service is disabled' };
+      console.warn('Embedding Service is disabled: No API URL available');
+      return { status: 'error', error: 'Embedding Service is disabled: No API URL available' };
     }
 
     try {
@@ -99,10 +99,10 @@ export class EmbeddingService {
     threadId?: string
   ): Promise<RAGResponse> {
     if (!this.enabled) {
-      console.warn('Embedding Service is disabled');
+      console.warn('Embedding Service is disabled: No API URL available');
       return {
-        answer: "I couldn't access my extended knowledge at the moment. How can I help with what I know?",
-        context: "Embedding Service disabled"
+        answer: "I couldn't access my extended knowledge at the moment. The embedding service is not configured.",
+        context: "Embedding Service disabled: No API URL available"
       };
     }
 

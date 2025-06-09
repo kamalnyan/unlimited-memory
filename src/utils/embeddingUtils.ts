@@ -5,8 +5,8 @@
 
 import axios from 'axios';
 
-// Get embedding API URL from environment or use default
-export const EMBEDDING_API_URL = process.env.EMBEDDING_API_URL || 'https://f004-2404-7c80-5c-24b6-a48c-55fc-fe65-3417.ngrok-free.app';
+// Get embedding API URL from environment
+export const EMBEDDING_API_URL = process.env.EMBEDDING_API_URL;
 
 /**
  * Interface for the response from the embedding API
@@ -43,6 +43,14 @@ export async function createEmbedding(
   threadId?: string,
   messageId?: string
 ): Promise<EmbeddingResponse> {
+  if (!EMBEDDING_API_URL) {
+    console.error('Error creating embedding: EMBEDDING_API_URL not defined in environment');
+    return { 
+      status: 'error',
+      error: 'EMBEDDING_API_URL not defined in environment'
+    };
+  }
+  
   try {
     const response = await axios.post(`${EMBEDDING_API_URL}/embed`, {
       userId,
@@ -76,6 +84,14 @@ export async function getRAGResponse(
   query: string,
   threadId?: string
 ): Promise<RAGResponse> {
+  if (!EMBEDDING_API_URL) {
+    console.error('Error getting RAG response: EMBEDDING_API_URL not defined in environment');
+    return {
+      answer: "I couldn't retrieve relevant information at the moment. Environment configuration is missing.",
+      context: "Error: EMBEDDING_API_URL not defined in environment"
+    };
+  }
+  
   try {
     const response = await axios.post(`${EMBEDDING_API_URL}/rag-generate`, {
       userId,

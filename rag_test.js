@@ -1,6 +1,11 @@
 import axios from 'axios';
+import dotenv from 'dotenv';
 
-const RAG_API_URL = 'https://f004-2404-7c80-5c-24b6-a48c-55fc-fe65-3417.ngrok-free.app/rag-generate';
+// Load environment variables
+dotenv.config();
+
+// Get the RAG API URL from environment variables or use a default
+const RAG_API_URL = process.env.EMBEDDING_API_URL ? `${process.env.EMBEDDING_API_URL}/rag-generate` : 'http://localhost:3000/rag-generate';
 
 // Test queries to demonstrate the RAG system
 const testQueries = [
@@ -25,6 +30,7 @@ const testQueries = [
 async function testRagWithQuery(query) {
   try {
     console.log(`\n=== Querying RAG API with "${query.query}" ===`);
+    console.log(`Using API URL: ${RAG_API_URL}`);
     
     const response = await axios.post(RAG_API_URL, query);
     

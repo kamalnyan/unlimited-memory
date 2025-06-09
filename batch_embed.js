@@ -1,4 +1,8 @@
 import axios from 'axios';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 // Messages data
 const messages = [
@@ -154,10 +158,12 @@ const messages = [
   }
 ];
 
-const API_URL = 'https://f004-2404-7c80-5c-24b6-a48c-55fc-fe65-3417.ngrok-free.app/embed';
+// Get the API URL from environment variables or use a default
+const API_URL = process.env.EMBEDDING_API_URL ? `${process.env.EMBEDDING_API_URL}/embed` : 'http://localhost:3000/embed';
 
 async function embedMessages() {
   console.log(`Starting to embed ${messages.length} messages...`);
+  console.log(`Using API URL: ${API_URL}`);
   
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
