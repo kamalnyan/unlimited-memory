@@ -6,106 +6,200 @@
  */
 import express, { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { Message, IFileAttachment } from '@/models/message';
-import { Thread } from '@/models/thread';
-import { withDatabase } from '@/lib/db';
-import { OpenAIService } from '@/server/services/openai';
+import { Message, IMessage } from '../../../models/message.js';
+import { Thread } from '../../../models/thread.js';
+import { withDatabase } from '../../../lib/db.js';
 import { 
   asyncHandler, 
   apiResponse, 
   ValidationError, 
   NotFoundError,
   UnauthorizedError 
-} from '../middleware';
+} from '../middleware.js';
+import { isTrivialMessage } from '../../../utils/messageUtils.js';
+import { embeddingService, openaiService } from '../index.js';
 
 const router = express.Router();
 
-// Initialize OpenAI service
-const openaiService = new OpenAIService(process.env.OPENAI_API_KEY );
-
 /**
  * POST /api/messages
- * 
- * Creates a new message in a thread
- * 
- * @param req.body.threadId - Thread ID (required)
- * @param req.body.content - Message content (required)
- * @param req.body.userId - User ID for ownership validation
- * @param req.body.files - Array of file attachments (optional)
- * 
- * @returns The created message object
+ * Create a new message in a thread
  */
 router.post('/', asyncHandler(async (req: Request, res: Response) => {
-  const { threadId, content, userId, files } = req.body;
+  const { threadId, content, userId } = req.body;
   
-  // Validate required fields
   if (!threadId || !content) {
     throw new ValidationError('threadId and content are required fields');
   }
   
-  // Check if the thread ID is valid
   if (!mongoose.Types.ObjectId.isValid(threadId)) {
     throw new ValidationError('Invalid thread ID format');
   }
   
+  console.log(`Creating message in thread ${threadId}`, { userId });
+  
   const message = await withDatabase(async () => {
-    // First check if thread exists and user has access
+    // Find the thread to ensure it exists
     const thread = await Thread.findById(threadId);
-    
     if (!thread) {
       throw new NotFoundError('Thread not found');
     }
     
-    // If userId is provided, verify ownership
-    if (userId && thread.userId !== userId) {
-      throw new UnauthorizedError('You do not have permission to add messages to this thread');
-    }
-    
-    // Determine sender: prefer req.user.clerkId, else userId, else 'system'
-    const reqAny = req as any;
-    let sender = 'system';
-    if (reqAny.user && reqAny.user.clerkId) sender = reqAny.user.clerkId;
-    else if (userId) sender = userId;
-    else if (reqAny.user && reqAny.user.email) sender = reqAny.user.email;
-    else if (reqAny.user && reqAny.user.username) sender = reqAny.user.username;
-
-    // Create the message with optional files
-    const messageData: any = {
+    // Create the user message
+    const newMessage = await Message.create({
       threadId,
       content,
-      sender,
-    };
-    
-    // Add files if provided
-    if (files && Array.isArray(files) && files.length > 0) {
-      messageData.files = files;
-    }
-    
-    const newMessage = await Message.create(messageData);
-    
-    // Fetch previous messages for context
-    const context = await Message.find({ threadId }).sort({ createdAt: 1 }).lean();
-
-    // After creating the user message, generate AI response
-    const aiResponseContent = await openaiService.generateResponse(newMessage.threadId, newMessage.content, context);
-    
-    // Create AI message
-    const aiMessage = await Message.create({
-      threadId,
-      content: aiResponseContent,
-      sender: 'system',
+      sender: userId || 'user',
+      files: req.body.files || []
     });
     
-    // Format message for frontend
-    return {
-      id: newMessage._id.toString(),
-      threadId: newMessage.threadId.toString(),
-      content: newMessage.content,
-      sender: newMessage.sender?.toString(),
-      files: newMessage.files,
-      createdAt: newMessage.createdAt,
-      updatedAt: newMessage.updatedAt,
-    };
+    console.log('Message saved:', newMessage._id.toString());
+    
+    // Check if this is a trivial message (greeting, etc.)
+    const skipEmbedding = isTrivialMessage(content);
+    
+    if (skipEmbedding) {
+      console.log(`Skipping embedding for trivial message: "${content}"`);
+      
+      // For trivial messages, just generate a simple response without RAG
+      const context = await Message.find({ threadId }).sort({ createdAt: 1 }).lean();
+      const aiResponseContent = await openaiService.generateResponse(
+        thread._id.toString(),
+        content,
+        context
+      );
+
+      const aiMessage = await Message.create({
+        threadId,
+        content: aiResponseContent,
+        sender: 'system',
+      });
+
+      return {
+        id: newMessage._id.toString(),
+        threadId: newMessage.threadId.toString(),
+        content: newMessage.content,
+        sender: newMessage.sender?.toString(),
+        files: newMessage.files,
+        createdAt: newMessage.createdAt,
+        updatedAt: newMessage.updatedAt,
+        aiResponse: {
+          id: aiMessage._id.toString(),
+          content: aiMessage.content,
+          sender: aiMessage.sender,
+          createdAt: aiMessage.createdAt
+        },
+        skippedEmbedding: true
+      };
+    }
+
+    try {
+      // Store message embedding
+      if (embeddingService.isEnabled()) {
+        console.log('Creating embedding for message');
+        await embeddingService.createEmbedding(
+          thread.userId,
+          content,
+          thread._id.toString(),
+          newMessage._id.toString()
+        );
+        console.log('Message embedding created successfully');
+
+        // Get context-enhanced response using RAG
+        console.log('Getting RAG-enhanced response');
+        const ragResponse = await embeddingService.getRAGResponse(
+          thread.userId,
+          content,
+          thread._id.toString()
+        );
+        console.log('RAG results received successfully');
+
+        // Get conversation context
+        const context = await Message.find({ threadId }).sort({ createdAt: 1 }).lean();
+
+        // Enhanced prompt with RAG context
+        const enhancedPrompt = await embeddingService.enhancePromptWithRAG(
+          thread.userId,
+          content,
+          thread._id.toString(),
+          context
+        );
+
+        // Generate AI response using OpenAI with enhanced context
+        const aiResponseContent = await openaiService.generateResponse(
+          thread._id.toString(),
+          enhancedPrompt, // Use the enhanced prompt
+          context
+        );
+
+        // Create AI message
+        const aiMessage = await Message.create({
+          threadId,
+          content: aiResponseContent,
+          sender: 'system',
+        });
+
+        // Store embedding for AI response too if it's substantial
+        if (aiResponseContent.length > 20) {
+          await embeddingService.createEmbedding(
+            thread.userId,
+            aiResponseContent,
+            thread._id.toString()
+          );
+        }
+
+        return {
+          id: newMessage._id.toString(),
+          threadId: newMessage.threadId.toString(),
+          content: newMessage.content,
+          sender: newMessage.sender?.toString(),
+          files: newMessage.files,
+          createdAt: newMessage.createdAt,
+          updatedAt: newMessage.updatedAt,
+          aiResponse: {
+            id: aiMessage._id.toString(),
+            content: aiMessage.content,
+            sender: aiMessage.sender,
+            createdAt: aiMessage.createdAt
+          }
+        };
+      } else {
+        throw new Error('Embedding service not available');
+      }
+    } catch (error) {
+      console.error('Error in embedding/RAG processing:', error);
+      
+      // Fall back to basic OpenAI response if embedding API fails
+      const context = await Message.find({ threadId }).sort({ createdAt: 1 }).lean();
+      const aiResponseContent = await openaiService.generateResponse(
+        thread._id.toString(),
+        content,
+        context
+      );
+      
+      const aiMessage = await Message.create({
+        threadId,
+        content: aiResponseContent,
+        sender: 'system',
+      });
+      
+      return {
+        id: newMessage._id.toString(),
+        threadId: newMessage.threadId.toString(),
+        content: newMessage.content,
+        sender: newMessage.sender?.toString(),
+        files: newMessage.files,
+        createdAt: newMessage.createdAt,
+        updatedAt: newMessage.updatedAt,
+        aiResponse: {
+          id: aiMessage._id.toString(),
+          content: aiMessage.content,
+          sender: aiMessage.sender,
+          createdAt: aiMessage.createdAt
+        },
+        warning: 'Embedding service unavailable, using basic response'
+      };
+    }
   });
   
   return apiResponse(res, 201, message, 'Message created successfully');
@@ -354,65 +448,123 @@ router.post('/batch', asyncHandler(async (req: Request, res: Response) => {
  * POST /api/messages/generate
  * 
  * Generates an AI response to a user message
+ * Always uses RAG and embedding for all messages
  * 
  * @param req.body.threadId - Thread ID
  * @param req.body.userMessage - User message content
  * 
- * @returns Generated AI message
+ * @returns Generated AI message with context
  */
 router.post('/generate', asyncHandler(async (req: Request, res: Response) => {
   const { threadId, userMessage } = req.body;
-  
-  // Validate required fields
+
   if (!threadId || !userMessage) {
     throw new ValidationError('threadId and userMessage are required fields');
   }
-  
-  // Check if the thread ID is valid
+
   if (!mongoose.Types.ObjectId.isValid(threadId)) {
     throw new ValidationError('Invalid thread ID format');
   }
-  
-  const aiMessage = await withDatabase(async () => {
-    // First check if thread exists
+
+  console.log('Embedding service enabled:', embeddingService.isEnabled());
+
+  const responsePayload = await withDatabase(async () => {
     const thread = await Thread.findById(threadId);
-    
     if (!thread) {
       throw new NotFoundError('Thread not found');
     }
-    
-    // Get conversation context (last 10 messages in chronological order)
-    // Using proper sort order with Mongoose - oldest messages first
-    const context = await Message.find({ threadId })
-      .sort({ createdAt: 1 }) // 1 = ascending, oldest first
-      .limit(10)
-      .lean() // Use lean() to get plain objects instead of Mongoose documents
-      .exec();
-    
-    console.log(`Generating AI response for thread ${threadId} with ${context.length} context messages`);
-    
-    // Generate AI response using OpenAI with file content included
-    const aiContent = await openaiService.generateResponse(threadId, userMessage, context);
-    
-    // Create and save the AI response message
-    const newMessage = await Message.create({
+
+    // Store the user message first
+    const userMessageDoc = await Message.create({
       threadId,
-      content: aiContent,
-      sender: 'system',
+      content: userMessage,
+      sender: thread.userId || 'user', // fallback
     });
-    
-    // Format message for frontend
-    return {
-      id: newMessage._id.toString(),
-      threadId: newMessage.threadId.toString(),
-      content: newMessage.content,
-      sender: newMessage.sender?.toString(),
-      createdAt: newMessage.createdAt,
-      updatedAt: newMessage.updatedAt,
-    };
+
+    try {
+      if (embeddingService.isEnabled()) {
+        console.log('Creating embedding for user message');
+        // Create embedding for the user message
+        await embeddingService.createEmbedding(
+          thread.userId,
+          userMessage,
+          thread._id.toString(),
+          userMessageDoc._id.toString()
+        );
+        console.log('User message embedding created');
+
+        // Get conversation context
+        const context = await Message.find({ threadId }).sort({ createdAt: 1 }).lean();
+        
+        // Get enhanced prompt with RAG context
+        const enhancedPrompt = await embeddingService.enhancePromptWithRAG(
+          thread.userId,
+          userMessage,
+          thread._id.toString(),
+          context
+        );
+        console.log('Enhanced prompt with RAG context');
+
+        // Generate AI response using OpenAI with enhanced context
+        const aiContent = await openaiService.generateResponse(
+          threadId, 
+          enhancedPrompt, 
+          context
+        );
+
+        // Create AI message
+        const aiMessageDoc = await Message.create({
+          threadId,
+          content: aiContent,
+          sender: 'system',
+        });
+
+        // Store embedding for AI response too if it's substantial
+        if (aiContent.length > 20) {
+          await embeddingService.createEmbedding(
+            thread.userId,
+            aiContent,
+            thread._id.toString()
+          );
+        }
+
+        return {
+          id: aiMessageDoc._id.toString(),
+          threadId: aiMessageDoc.threadId.toString(),
+          content: aiMessageDoc.content,
+          sender: aiMessageDoc.sender,
+          createdAt: aiMessageDoc.createdAt,
+          updatedAt: aiMessageDoc.updatedAt,
+        };
+      } else {
+        throw new Error('Embedding service not available');
+      }
+    } catch (error) {
+      console.error('Error in RAG-enhanced response generation:', error);
+
+      // Fall back to basic OpenAI response if embedding API fails
+      const context = await Message.find({ threadId }).sort({ createdAt: 1 }).limit(10).lean();
+      const fallbackResponse = await openaiService.generateResponse(threadId, userMessage, context);
+
+      const fallbackMsg = await Message.create({
+        threadId,
+        content: fallbackResponse,
+        sender: 'system',
+      });
+
+      return {
+        id: fallbackMsg._id.toString(),
+        threadId: fallbackMsg.threadId.toString(),
+        content: fallbackMsg.content,
+        sender: fallbackMsg.sender,
+        createdAt: fallbackMsg.createdAt,
+        updatedAt: fallbackMsg.updatedAt,
+        warning: 'Fallback response used due to embedding service failure',
+      };
+    }
   });
-  
-  return apiResponse(res, 201, aiMessage, 'AI response generated successfully');
+
+  return apiResponse(res, 201, responsePayload, 'AI response generated successfully');
 }));
 
 export default router; 

@@ -2,14 +2,16 @@
  * openai.ts
  * OpenAI service for handling GPT integration.
  * Adds memory recall from past MongoDB messages using simple keyword-based search.
+ * Now integrates with EmbeddingService for RAG-enhanced responses.
  */
 
 import OpenAI from 'openai';
-import { IMessage, Message } from '@/models/message'; // Make sure Message model is imported
+import { IMessage, Message } from '../../models/message.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
+import { EmbeddingService } from './embeddingService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,9 +20,12 @@ export class OpenAIService {
   private openai: OpenAI | null = null;
   private model: string;
   private useMockResponses: boolean = false;
+  private embeddingService: EmbeddingService;
 
-  constructor(apiKey?: string) {
+  constructor(apiKey?: string, embeddingApiUrl?: string) {
     this.model = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
+    // Initialize embedding service
+    this.embeddingService = new EmbeddingService(embeddingApiUrl);
 
     if (apiKey) {
       try {
@@ -49,9 +54,37 @@ export class OpenAIService {
       }
 
       const MAX_CONTEXT_LENGTH = 4000;
+      const threadIdStr = threadId.toString();
+      
+      // Extract user ID from the context if available
+      let userId = '';
+      const firstUserMessage = context.find(msg => msg.userId);
+      if (firstUserMessage) {
+        userId = firstUserMessage.userId;
+      }
+      
+      let enhancedPrompt = userMessage;
+      
+      // Use RAG enhancement if embedding service is enabled and userId is available
+      if (this.embeddingService.isEnabled() && userId) {
+        try {
+          // Attempt to enhance the prompt with RAG context
+          enhancedPrompt = await this.embeddingService.enhancePromptWithRAG(
+            userId, 
+            userMessage, 
+            threadIdStr,
+            context
+          );
+          console.log('Using RAG-enhanced prompt');
+        } catch (ragError) {
+          console.error('Failed to enhance prompt with RAG:', ragError);
+          // Fall back to traditional memory if RAG fails
+          enhancedPrompt = userMessage;
+        }
+      }
 
-      // 🧠 Memory injection
-      const memorySnippets = await this.getRelevantMemory(threadId.toString(), userMessage);
+      // 🧠 Traditional memory injection as fallback
+      const memorySnippets = await this.getRelevantMemory(threadIdStr, userMessage);
       const memoryContext = memorySnippets.length > 0
         ? `Here are some things the user said previously:\n${memorySnippets.join('\n')}`
         : '';
@@ -63,6 +96,7 @@ export class OpenAIService {
 
       const messages = [systemMessage];
 
+      // Add conversation context
       for (const msg of context) {
         let content = msg.content || '';
         if (content.length > MAX_CONTEXT_LENGTH) {
@@ -74,7 +108,8 @@ export class OpenAIService {
         });
       }
 
-      messages.push({ role: 'user', content: userMessage });
+      // Use the enhanced prompt instead of the raw user message
+      messages.push({ role: 'user', content: enhancedPrompt });
 
       const completion = await this.openai.chat.completions.create({
         model: this.model,
@@ -84,6 +119,24 @@ export class OpenAIService {
       });
 
       const response = completion.choices[0]?.message?.content || 'I could not generate a response.';
+
+      // Store the embedding for the AI response if embedding service is enabled and userId is available
+      if (this.embeddingService.isEnabled() && userId) {
+        try {
+          // Store embeddings for meaningful AI responses
+          if (response.length > 20) {
+            await this.embeddingService.createEmbedding(
+              userId,
+              response,
+              threadIdStr
+            );
+          }
+        } catch (embedError) {
+          console.error('Failed to create embedding for AI response:', embedError);
+          // Non-critical error, continue without embedding
+        }
+      }
+
       return response;
     } catch (error: any) {
       console.error('OpenAI error:', error);
@@ -123,10 +176,10 @@ export class OpenAIService {
     const regex = new RegExp(lastKeyword, 'i');
 
     const pastMessages = await Message.find({
-      threadId,
+      threadId: new mongoose.Types.ObjectId(threadId),
       sender: { $ne: 'system' },
       content: { $regex: regex }
-    }).sort({ createdAt: -1 }).limit(3).lean();
+    }).sort({ createdAt: -1 }).limit(3).lean().exec();
 
     return pastMessages.map(msg => `• ${msg.content}`);
   }

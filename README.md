@@ -157,3 +157,28 @@ npm run build
 ```bash
 vercel
 ```
+
+## Semantic Search and RAG Features
+
+EOXS AI now includes semantic search and Retrieval-Augmented Generation (RAG) capabilities that enhance the AI's responses with relevant context from previous conversations.
+
+### How It Works
+
+1. **Embedding Generation**: User messages are converted into vector embeddings that capture their semantic meaning.
+2. **Semantic Search**: When a user asks a question, the system finds semantically similar past messages.
+3. **Context Enhancement**: The AI uses this relevant context to generate more accurate and informed responses.
+4. **User Interface**: Users can view the sources of context that informed the AI's responses.
+
+### Configuration
+
+To enable the embedding and RAG features, set the following environment variable:
+
+```
+EMBEDDING_API_URL=https://your-embedding-api-url.com
+```
+
+### Benefits
+
+- More accurate and contextually relevant AI responses
+- Better memory of past conversations and user preferences
+- Transparent AI decision making with viewable context sources

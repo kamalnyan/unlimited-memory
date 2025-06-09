@@ -4,25 +4,33 @@
  * Sets up authentication and error handling for all API endpoints.
  * Exports the main API router for use in the Express application.
  */
-import express from 'express';
+import express, { Router } from 'express';
 import { json, urlencoded } from 'express';
 import cors from 'cors';
-import { errorHandler } from './middleware';
-import { extractClerkUser } from './auth-middleware';
+import { errorHandler } from './middleware.js';
+import { extractClerkUser } from './auth-middleware.js';
+import { OpenAIService } from '../services/openai.js';
+import { EmbeddingService } from '../services/embeddingService.js';
 
 // Import route modules
-import userRoutes from './routes/users';
-import threadRoutes from './routes/threads';
-import messageRoutes from './routes/messages';
-import dbRoutes from './routes/db';
-import analyticsRoutes from './routes/analytics';
-import adminRoutes from './routes/admin';
-import aiVisionRoutes from './routes/aiVision';
-import uploadRoutes from './routes/upload';
-import adminUserSummaryRoutes from './routes/adminUserSummary';
-import documentRoutes from './routes/document';
-// Create Express router instance
-const router = express.Router();
+import userRoutes from './routes/users.js';
+import threadRoutes from './routes/threads.js';
+import messageRoutes from './routes/messages.js';
+import dbRoutes from './routes/db.js';
+import analyticsRoutes from './routes/analytics.js';
+import adminRoutes from './routes/admin.js';
+import aiVisionRoutes from './routes/aiVision.js';
+import uploadRoutes from './routes/upload.js';
+import adminUserSummaryRoutes from './routes/adminUserSummary.js';
+import documentRoutes from './routes/document.js';
+
+const router = Router();
+
+// Initialize and export services
+export const openaiService = new OpenAIService(process.env.OPENAI_API_KEY);
+
+// Initialize the embedding service with the URL from environment variables
+export const embeddingService = new EmbeddingService(process.env.EMBEDDING_API_URL);
 
 /**
  * Apply global middleware
@@ -94,6 +102,22 @@ router.use('/ai', aiVisionRoutes);
 router.use('/', uploadRoutes);
 router.use('/adminUserSummary', adminUserSummaryRoutes);
 router.use('/document', documentRoutes);
+
+// Service status endpoint
+router.get('/status', (req, res) => {
+  const openaiStatus = process.env.OPENAI_API_KEY ? 'available' : 'unavailable';
+  const embeddingStatus = embeddingService.isEnabled() ? 'available' : 'unavailable';
+  
+  res.json({
+    status: 'ok',
+    version: process.env.npm_package_version || '1.0.0',
+    services: {
+      openai: openaiStatus,
+      embedding: embeddingStatus
+    }
+  });
+});
+
 /**
  * 404 handler for API routes
  */
